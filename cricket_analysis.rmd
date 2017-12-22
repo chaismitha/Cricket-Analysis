@@ -1,0 +1,183 @@
+---
+title: "Cricket Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+odi=read.csv(file="odi-batting.csv",header=TRUE)
+
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(treemapify)
+```
+
+```{r}
+data = as.Date(odi$MatchDate, format='%m-%d-%Y')
+odi$Year = format(data,'%Y')
+odi$Month = format(data, '%m')
+odi$Weekday = format(data, '%A')
+
+```
+
+## Top ten players by total runs
+```{r, message=FALSE, warning=FALSE}
+top_players = odi %>% group_by(Player) %>% summarise(Total_Runs = sum(Runs, na.rm=TRUE), Country=first(Country)) %>% arrange(-Total_Runs)
+kable(top_players[1:5, ])
+```
+## Countrywise total number of players
+```{r, message=FALSE, warning=FALSE}
+country_players = odi %>% group_by(Country) %>% summarise(Count_Players=n_distinct(Player)) %>% arrange(-Count_Players)
+head(country_players)
+```
+
+
+
+
+```{r, message=FALSE, warning=FALSE}
+odi = odi %>% mutate(ducks=if_else(Runs==0, 1, 0))
+odi = odi %>% mutate(centuries=if_else(Runs>99, 1, 0))
+odi = odi %>% mutate(missed=if_else(Runs>90 & Runs<100, 1, 0))
+odi = odi %>% mutate(fifties=if_else(Runs>50 & Runs<100, 1, 0))
+
+
+players_summary = odi %>% group_by(Player) %>% summarise(Total_Runs=sum(Runs, na.rm=TRUE), Centuries=sum(centuries, na.rm=TRUE ), ducks=sum(ducks, na.rm=TRUE), fifties=sum(fifties, na.rm=TRUE), Missed_Centuries=sum(missed, na.rm=TRUE)) %>% arrange(-Total_Runs)
+kable(head(players_summary))
+```
+# Bar chart for total runs by month 
+
+```{r}
+odi %>% group_by(Month) %>% summarise(runs=sum(Runs,na.rm=T)) %>% ggplot(aes(x=Month,y=runs))+geom_bar(stat= "identity")
+```
+
+```{r}
+odi %>% filter( Player=='Sachin R Tendulkar') %>% ggplot(aes(x=Runs,y=ScoreRate))+geom_point()+geom_smooth()
+```
+
+#three player performance
+```{r}
+top_player=c('Sachin R Tendulkar','Virender Sehwag','Sourav C Ganguly' )
+
+odi %>% filter(Player %in% top_player) %>% ggplot(aes(x=Runs,y=ScoreRate,color=Player))+geom_smooth()
+```
+
+#
+```{r}
+top_players = odi %>% group_by(Player) %>% summarise(Runs=sum(Runs,na.rm=TRUE)) %>% arrange(-Runs) %>% head(10)
+
+top_players
+
+odi %>% filter(Player %in% top_players$Player) %>% ggplot(aes(x=Runs,y=ScoreRate,color=Player))+geom_smooth()
+```
+
+#sachin total runs & total cen by year wise
+
+```{r}
+sachin= odi %>% filter(Player=="Sachin R Tendulkar") %>% group_by(Year) %>% summarise(Total_run=sum(Runs),Total_cen=sum(centuries),Avg_Runs=mean(Runs,na.rm=TRUE)) 
+g=ggplot(sachin,aes(x=Year,y=Total_run,size=Total_cen,color=-Avg_Runs))+geom_point()
+ggplotly(g)
+
+```
+
+top 10 players top10/total runs
+
+```{r}
+#install(devtools)
+#install(treemapify)
+
+indian_player=odi %>% filter(Country=='India') %>% group_by(Player) %>% summarise(Total_Runs=sum(Runs,na.rm=TRUE),Avg_SR=mean(ScoreRate,na.rm=T)) %>% arrange(-Total_Runs) %>% head(50)
+
+indian_player
+
+g=ggplot(indian_player,aes(area=Total_Runs,label=Player,fill=Avg_SR))+geom_treemap()
+
+g=g+geom_treemap_text()
+plot(g)
+
+#library(scales)
+#scale will be between -1 to 1...so we need to check min &max vales and then fix the vales in b/w -1 to 1
+ #(x=c(100,10,0,60,90)
+ # rescale(x,c(-1,1))
+ # mean(x)
+  
+ # min(indian_player$Avg_SR)
+ # max(indian_player$Avg_SR)
+
+indian_player$Avg_SR_Scaled=rescale(indian_player$Avg_SR,c(-1,1))
+
+g=ggplot(indian_player,aes(area=Total_Runs,label=Player,fill=-Avg_SR_Scaled))+geom_treemap()
+
+g=g+geom_treemap_text() + scale_fill_gradient2(low="red", mid="yellow",high="green")
+plot(g)
+
+g=g+geom_treemap_text() + scale_fill_gradient2(low="#F65314", mid="#FFBB00",high="#7CBB00")
+plot(g)
+
+```
+
+
+```{r}
+ggplot(indian_player,aes(x=Player,y=Total_Runs,fill=-Avg_SR_Scaled))+geom_bar(stat='identity')+scale_fill_gradient2(low="#F65314",mid="#FFBB00",high="#7CBB00")
+```
+
+
+
+
+
+# Create a new column by binning the Runs column using the following ranges and plot the frequency count of ranges
+0-25, 26-50, 51-75, 76-100, 100+
+```{r}
+a=odi %>% mutate(Runs,run_bins=if_else(Runs %in% 0:25,"0-25",if_else(Runs %in% 26:50,"26-50",if_else(Runs %in% 51:75,"51-75",if_else(Runs %in% 76:100,"76-100","100+")))))
+ a %>% group_by(run_bins)%>% select(run_bins,Runs) %>% head(10)
+b=a %>% group_by(run_bins) %>% summarise(frequency=n())
+
+ggplot(b,aes(x=reorder(run_bins,-frequency),y=frequency))+geom_bar(stat="identity")
+                                                                   
+```                                                            
+
+
+#. Consider the top ten players by total runs and compute and visualize the number of centuries across years (use facet_grid or facet_wrap)
+
+```{r}
+
+odi$Date = as.Date(odi$MatchDate, format="%m-%d-%Y")
+odi$year = format(odi$Date, '%Y')
+
+top_run=odi %>% group_by(Player) %>% summarise(tot_run=sum(Runs,na.rm=T)) %>% arrange(-tot_run) %>% head(10)
+
+odi = odi %>% mutate(centuries=if_else(Runs>99, 1, 0))
+
+a=odi %>%  filter(Player %in% top_run$Player,centuries==1) %>%group_by(Player,year)  %>% summarise(no_cen=sum(centuries))
+
+
+ggplot(a, aes(x=year, y=no_cen)) + geom_bar(stat='identity') + facet_wrap(~Player)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
